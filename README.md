@@ -1,8 +1,8 @@
 # weaver-bindplane-observability-lab
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![semconv](https://github.com/OWNER/weaver-bindplane-observability-lab/actions/workflows/semconv.yml/badge.svg)](.github/workflows/semconv.yml)
-[![compose-smoke](https://github.com/OWNER/weaver-bindplane-observability-lab/actions/workflows/compose-smoke.yml/badge.svg)](.github/workflows/compose-smoke.yml)
+[![semconv](https://github.com/canetizen/weaver-bindplane-observability-lab/actions/workflows/semconv.yml/badge.svg)](.github/workflows/semconv.yml)
+[![compose-smoke](https://github.com/canetizen/weaver-bindplane-observability-lab/actions/workflows/compose-smoke.yml/badge.svg)](.github/workflows/compose-smoke.yml)
 [![Weaver](https://img.shields.io/badge/OTel%20Weaver-v0.25.1-blueviolet)](https://github.com/open-telemetry/weaver)
 [![BDOT Collector](https://img.shields.io/badge/BDOT%20Collector-1.105.1-blue)](https://github.com/observiq/bindplane-otel-collector)
 
@@ -140,7 +140,7 @@ official container images.
 ## Quick start
 
 ```bash
-git clone https://github.com/OWNER/weaver-bindplane-observability-lab.git
+git clone https://github.com/canetizen/weaver-bindplane-observability-lab.git
 cd weaver-bindplane-observability-lab
 
 cp .env.example .env      # every port and image version lives here
