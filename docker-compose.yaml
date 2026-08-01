@@ -1,0 +1,284 @@
+# Description: The whole lab — three services, four BDOT collectors, Weaver live-check and the observability backends.
+# Created by: Mustafa Can Caliskan
+# Date: 2026-08-01
+
+name: acme-observability-lab
+
+x-service-build: &service-build
+  context: .
+  dockerfile: services/Dockerfile
+
+x-python-healthcheck: &python-healthcheck
+  interval: 5s
+  timeout: 3s
+  retries: 10
+  start_period: 10s
+
+x-bdot-agent: &bdot-agent
+  image: ghcr.io/observiq/bindplane-agent:${BDOT_VERSION}
+  restart: unless-stopped
+  command: ["--config", "/etc/otel/config.yaml"]
+  volumes:
+    - ./collector/agent.yaml:/etc/otel/config.yaml:ro
+
+services:
+  # --- Application ------------------------------------------------------------
+
+  gateway:
+    build:
+      <<: *service-build
+      args:
+        SERVICE: gateway
+    command: ["uvicorn", "service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://agent-gateway:4317
+      CHECKOUT_URL: http://checkout:8001
+    ports:
+      - "${GATEWAY_PORT}:8000"
+    healthcheck:
+      <<: *python-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
+    depends_on:
+      - agent-gateway
+
+  checkout:
+    build:
+      <<: *service-build
+      args:
+        SERVICE: checkout
+    command: ["uvicorn", "service.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://agent-checkout:4317
+      PAYMENT_URL: http://payment:8002
+    ports:
+      - "${CHECKOUT_PORT}:8001"
+    healthcheck:
+      <<: *python-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8001/healthz')"]
+    depends_on:
+      - agent-checkout
+
+  payment:
+    build:
+      <<: *service-build
+      args:
+        SERVICE: payment
+    command: ["uvicorn", "service.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://agent-payment:4317
+      EMIT_VIOLATIONS: ${EMIT_VIOLATIONS}
+    ports:
+      - "${PAYMENT_PORT}:8002"
+    healthcheck:
+      <<: *python-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8002/healthz')"]
+    depends_on:
+      - agent-payment
+
+  loadgen:
+    build:
+      <<: *service-build
+      args:
+        SERVICE: loadgen
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      LOADGEN_INTERVAL_SECONDS: ${LOADGEN_INTERVAL_SECONDS}
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # --- BDOT agent tier (one sidecar per service) ------------------------------
+
+  agent-gateway:
+    <<: *bdot-agent
+    environment:
+      SERVICE_NAME: acme-gateway
+    # Exposed so `make emit` can inject Weaver-generated sample signals into the
+    # very same pipeline the real services use.
+    ports:
+      - "${GATEWAY_AGENT_OTLP_GRPC_PORT}:4317"
+    depends_on:
+      - gw-collector
+
+  agent-checkout:
+    <<: *bdot-agent
+    environment:
+      SERVICE_NAME: acme-checkout
+    depends_on:
+      - gw-collector
+
+  agent-payment:
+    <<: *bdot-agent
+    environment:
+      SERVICE_NAME: acme-payment
+    depends_on:
+      - gw-collector
+
+  # --- BDOT gateway tier ------------------------------------------------------
+
+  gw-collector:
+    image: ghcr.io/observiq/bindplane-agent:${BDOT_VERSION}
+    restart: unless-stopped
+    command: ["--config", "/etc/otel/config.yaml"]
+    volumes:
+      - ./collector/gateway.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "${GW_COLLECTOR_ZPAGES_PORT}:55679"
+      - "${GW_COLLECTOR_HEALTH_PORT}:13133"
+    depends_on:
+      - jaeger
+      - loki
+      - weaver-live-check
+
+  # --- Weaver: continuous conformance check on the live stream ----------------
+
+  weaver-live-check:
+    image: otel/weaver:${WEAVER_VERSION}
+    restart: unless-stopped
+    user: "0:0"
+    environment:
+      HOME: /weaver-home
+    volumes:
+      - ./semconv:/semconv:ro
+      - weaver-home:/weaver-home
+    command:
+      - registry
+      - live-check
+      - --registry=/semconv
+      - --input-source=otlp
+      - --otlp-grpc-address=0.0.0.0
+      - --otlp-grpc-port=4317
+      - --admin-port=4320
+      - --inactivity-timeout=86400
+      - --format=json
+      - --output=http
+      - --fail-on=none
+      - --emit-otlp-logs
+      - --otlp-logs-endpoint=http://gw-collector:4419
+    ports:
+      - "${WEAVER_ADMIN_PORT}:4320"
+
+  # --- Backends ---------------------------------------------------------------
+
+  jaeger:
+    image: jaegertracing/all-in-one:${JAEGER_VERSION}
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_UI_PORT}:16686"
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+
+  loki:
+    image: grafana/loki:${LOKI_VERSION}
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "${LOKI_PORT}:3100"
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION}
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  # --- Optional: self-hosted Bindplane control plane (--profile bindplane) ----
+
+  bindplane:
+    image: ghcr.io/observiq/bindplane-ee:${BINDPLANE_VERSION}
+    profiles: ["bindplane"]
+    restart: unless-stopped
+    environment:
+      BINDPLANE_LICENSE: ${BINDPLANE_LICENSE}
+      BINDPLANE_USERNAME: ${BINDPLANE_USERNAME}
+      BINDPLANE_PASSWORD: ${BINDPLANE_PASSWORD}
+      BINDPLANE_REMOTE_URL: http://localhost:${BINDPLANE_UI_PORT}
+      BINDPLANE_SESSION_SECRET: ${BINDPLANE_SESSION_SECRET}
+      BINDPLANE_LOG_OUTPUT: stdout
+      BINDPLANE_ACCEPT_EULA: "true"
+      BINDPLANE_PROMETHEUS_ENABLE: "true"
+      BINDPLANE_PROMETHEUS_ENABLE_REMOTE: "true"
+      BINDPLANE_PROMETHEUS_HOST: bindplane-prometheus
+      BINDPLANE_PROMETHEUS_PORT: "9090"
+      BINDPLANE_TRANSFORM_AGENT_ENABLE_REMOTE: "true"
+      BINDPLANE_TRANSFORM_AGENT_REMOTE_AGENTS: bindplane-transform:4568
+      BINDPLANE_STORE_TYPE: postgres
+      BINDPLANE_POSTGRES_HOST: bindplane-postgres
+      BINDPLANE_POSTGRES_PORT: "5432"
+      BINDPLANE_POSTGRES_DATABASE: bindplane
+      BINDPLANE_POSTGRES_USERNAME: bindplane
+      BINDPLANE_POSTGRES_PASSWORD: ${BINDPLANE_POSTGRES_PASSWORD}
+    ports:
+      - "${BINDPLANE_UI_PORT}:3001"
+    depends_on:
+      - bindplane-postgres
+      - bindplane-prometheus
+      - bindplane-transform
+
+  # A fourth collector that takes its configuration from the Bindplane UI over
+  # OpAMP instead of from a file. The three sidecars keep reading collector/agent.yaml,
+  # so both management models run side by side and can be compared.
+  agent-managed:
+    image: ghcr.io/observiq/bindplane-agent:${BDOT_VERSION}
+    profiles: ["bindplane"]
+    restart: unless-stopped
+    environment:
+      OPAMP_ENDPOINT: ws://bindplane:3001/v1/opamp
+      OPAMP_SECRET_KEY: ${BINDPLANE_SECRET_KEY}
+      OPAMP_LABELS: lab=acme,mode=opamp
+      MANAGER_YAML_PATH: /etc/otel/storage/manager.yaml
+    volumes:
+      - agent-managed-storage:/etc/otel/storage
+    depends_on:
+      - bindplane
+
+  bindplane-postgres:
+    image: postgres:16
+    profiles: ["bindplane"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bindplane
+      POSTGRES_USER: bindplane
+      POSTGRES_PASSWORD: ${BINDPLANE_POSTGRES_PASSWORD}
+    volumes:
+      - bindplane-postgres:/var/lib/postgresql/data
+
+  bindplane-prometheus:
+    image: ghcr.io/observiq/bindplane-prometheus:${BINDPLANE_VERSION}
+    profiles: ["bindplane"]
+    restart: unless-stopped
+    volumes:
+      - bindplane-prometheus:/prometheus
+
+  bindplane-transform:
+    image: ghcr.io/observiq/bindplane-transform-agent:${BINDPLANE_VERSION}-bindplane
+    profiles: ["bindplane"]
+    restart: unless-stopped
+
+volumes:
+  weaver-home:
+  agent-managed-storage:
+  bindplane-postgres:
+  bindplane-prometheus:

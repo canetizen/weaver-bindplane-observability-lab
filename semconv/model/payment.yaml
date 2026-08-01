@@ -1,0 +1,29 @@
+groups:
+  - id: span.acme.payment.authorize
+    type: span
+    stability: development
+    span_kind: client
+    brief: >
+      A single authorization attempt against the payment provider. One
+      checkout may produce at most one authorization span.
+    attributes:
+      - ref: acme.order.id
+        requirement_level: required
+      - ref: acme.payment.method
+        requirement_level: required
+      - ref: acme.payment.decline_reason
+        requirement_level:
+          conditionally_required: When the authorization was declined.
+
+  - id: event.acme.payment.declined
+    type: event
+    name: acme.payment.declined
+    stability: development
+    brief: Emitted once per declined authorization attempt.
+    attributes:
+      - ref: acme.order.id
+        requirement_level: required
+      - ref: acme.payment.decline_reason
+        requirement_level: required
+      - ref: acme.payment.method
+        requirement_level: recommended

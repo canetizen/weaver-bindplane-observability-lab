@@ -1,0 +1,50 @@
+"""
+Description: Attribute keys and enum values generated from the Acme telemetry registry.
+Created by: OpenTelemetry Weaver
+Date: generated
+
+DO NOT EDIT. Regenerate with `make generate`. Source of truth: semconv/model/.
+Schema URL: {{ params.schema_url }}
+"""
+
+from enum import Enum
+
+SCHEMA_URL = "{{ params.schema_url }}"
+"""URL identifying the version of the Acme telemetry schema these symbols came from."""
+
+{% for group in ctx.registry_attributes | sort(attribute='id') %}
+# --- {{ group.id }}: {{ group.brief | trim }} ---
+{% for attr in group.attributes | sort(attribute='name') %}
+
+{{ attr.name | screaming_snake_case }} = "{{ attr.name }}"
+"""{{ attr.brief | trim }}"""
+{% endfor %}
+
+{% endfor %}
+# --- Attributes imported from the OpenTelemetry semantic conventions ---
+{% for attr in ctx.imported_attributes | sort(attribute='name') %}
+
+{{ attr.name | screaming_snake_case }} = "{{ attr.name }}"
+"""{{ attr.brief | trim | replace('\n', ' ') }}"""
+{% endfor %}
+
+{% for group in ctx.registry_attributes | sort(attribute='id') %}
+{% for attr in group.attributes | sort(attribute='name') %}
+{% if attr.type is mapping and attr.type.members is defined %}
+
+
+class {{ attr.name | pascal_case }}(str, Enum):
+    """Allowed values for the `{{ attr.name }}` attribute.
+
+    Emitting a value outside this enum is a schema violation and is reported by
+    `weaver registry live-check`.
+    """
+
+{% for member in attr.type.members %}
+    {{ member.id | screaming_snake_case }} = "{{ member.value }}"
+    """{{ member.brief | trim }}"""
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}

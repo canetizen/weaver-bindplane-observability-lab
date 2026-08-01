@@ -1,0 +1,16 @@
+# Local configuration
+.env
+
+# Weaver's registry dependency cache (the OpenTelemetry semantic conventions)
+.weaver-home/
+
+# Live-check reports pulled from the running stack
+report/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Editor/agent local settings
+.claude/

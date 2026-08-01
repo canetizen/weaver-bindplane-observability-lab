@@ -1,0 +1,22 @@
+groups:
+  - id: metric.acme.orders.submitted
+    type: metric
+    metric_name: acme.orders.submitted
+    instrument: counter
+    unit: "{order}"
+    stability: development
+    brief: Number of orders accepted by the checkout service.
+    attributes:
+      - ref: acme.customer.tier
+        requirement_level: required
+
+  - id: metric.acme.payment.duration
+    type: metric
+    metric_name: acme.payment.duration
+    instrument: histogram
+    unit: "ms"
+    stability: development
+    brief: End-to-end duration of a payment authorization attempt.
+    attributes:
+      - ref: acme.payment.method
+        requirement_level: required

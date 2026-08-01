@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.weaver-home
+report
+**/__pycache__
+grafana
+prometheus
+collector
+bindplane
+semconv
+semconv-baseline
+weaver
+generated/docs
+docs

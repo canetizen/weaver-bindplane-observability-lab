@@ -1,0 +1,64 @@
+groups:
+  - id: registry.acme.order
+    type: attribute_group
+    display_name: Acme Order Attributes
+    brief: Attributes describing an order flowing through the Acme Shop.
+    attributes:
+      - id: acme.order.id
+        type: string
+        stability: development
+        brief: Opaque identifier of the order, unique for the lifetime of the shop.
+        examples: ["ord-8f21c4", "ord-0a77be"]
+      - id: acme.customer.tier
+        type:
+          members:
+            - id: free
+              value: "free"
+              stability: development
+              brief: Customer on the free plan.
+            - id: plus
+              value: "plus"
+              stability: development
+              brief: Customer on the paid self-serve plan.
+        stability: development
+        brief: Commercial tier of the customer that placed the order.
+
+  - id: registry.acme.payment
+    type: attribute_group
+    display_name: Acme Payment Attributes
+    brief: Attributes describing a payment authorization attempt.
+    attributes:
+      - id: acme.payment.method
+        type:
+          members:
+            - id: card
+              value: "card"
+              stability: development
+              brief: Credit or debit card.
+            - id: wire
+              value: "wire"
+              stability: development
+              brief: Bank wire transfer.
+            - id: wallet
+              value: "wallet"
+              stability: development
+              brief: Third-party digital wallet.
+        stability: development
+        brief: Instrument used to authorize the payment.
+      - id: acme.payment.decline_reason
+        type:
+          members:
+            - id: insufficient_funds
+              value: "insufficient_funds"
+              stability: development
+              brief: The instrument did not have enough available balance.
+            - id: fraud_suspected
+              value: "fraud_suspected"
+              stability: development
+              brief: The risk engine rejected the attempt.
+            - id: expired_card
+              value: "expired_card"
+              stability: development
+              brief: The card is past its expiry date.
+        stability: development
+        brief: Why the payment authorization was declined.

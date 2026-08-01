@@ -1,0 +1,69 @@
+name: compose-smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    name: Bring the whole lab up and assert it produces telemetry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare configuration
+        run: cp .env.example .env
+
+      - name: Start the stack
+        run: docker compose up -d --build
+
+      - name: Wait for the services to become healthy
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -sf http://localhost:8000/healthz > /dev/null; then exit 0; fi
+            sleep 5
+          done
+          docker compose logs
+          exit 1
+
+      - name: Place an order
+        run: |
+          curl -sS --fail-with-body -X POST http://localhost:8000/checkout \
+            -H 'content-type: application/json' \
+            -d '{"item_count": 3, "customer_tier": "plus"}'
+
+      - name: Assert the trace reached Jaeger
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -s http://localhost:16686/api/services | grep -q acme-payment; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::no acme-payment traces in Jaeger"
+          exit 1
+
+      - name: Assert the registry-declared metrics reached Prometheus
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -s http://localhost:9090/api/v1/label/__name__/values \
+              | grep -q acme_orders_submitted_total; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::acme_orders_submitted_total never appeared in Prometheus"
+          exit 1
+
+      - name: Assert live-check caught the deliberate violations
+        run: |
+          mkdir -p report
+          curl -sS -X POST http://localhost:4320/stop -o report/live-check.json
+          python3 scripts/live_check_summary.py report/live-check.json | tee summary.txt
+          grep -q 'acme.payment.card_number' summary.txt
+          grep -q 'undefined_enum_variant :: acme.customer.tier' summary.txt
+
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose logs --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans

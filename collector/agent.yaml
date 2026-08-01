@@ -1,0 +1,115 @@
+# Description: Sidecar BDOT collector config shared by every Acme service; enriches, masks and measures before forwarding.
+# Created by: Mustafa Can Caliskan
+# Date: 2026-08-01
+#
+# One file, three containers: SERVICE_NAME is injected per container so each
+# agent tags its telemetry with the workload it sits next to.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  # Stamps the host the workload runs on, so telemetry keeps its origin after
+  # it is merged with every other service's at the gateway.
+  resourcedetection:
+    detectors: [env, system]
+    system:
+      hostname_sources: [os]
+
+  resource:
+    attributes:
+      - key: acme.agent.name
+        value: ${env:SERVICE_NAME}
+        action: upsert
+
+  # Bindplane component. Copies resource-level identity down onto individual
+  # log records and metric data points, so downstream systems that flatten
+  # resources (Loki, Prometheus) do not lose it.
+  resourceattributetransposer:
+    operations:
+      - from: service.name
+        to: service.name
+      - from: acme.service.tier
+        to: acme.service.tier
+
+  # Bindplane component. Sensitive data is removed at the edge, before it ever
+  # crosses the network to the gateway. Matching values become [masked_<rule>].
+  mask:
+    rules:
+      credit_card: '\b(?:\d{4}[- ]?){3}\d{4}\b'
+      email: '\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,6}\b'
+
+  # Bindplane component. Counts OTLP objects and payload bytes passing through
+  # this agent and publishes them as collector-internal metrics on :8888.
+  throughputmeasurement:
+    enabled: true
+    sampling_ratio: 1.0
+
+  batch:
+    timeout: 2s
+    send_batch_size: 512
+
+exporters:
+  otlp/gateway:
+    endpoint: gw-collector:4317
+    tls:
+      insecure: true
+    retry_on_failure:
+      enabled: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, zpages]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, resource, mask, throughputmeasurement, batch]
+      exporters: [otlp/gateway]
+    metrics:
+      receivers: [otlp]
+      processors:
+        [
+          memory_limiter,
+          resourcedetection,
+          resource,
+          resourceattributetransposer,
+          throughputmeasurement,
+          batch,
+        ]
+      exporters: [otlp/gateway]
+    logs:
+      receivers: [otlp]
+      processors:
+        [
+          memory_limiter,
+          resourcedetection,
+          resource,
+          resourceattributetransposer,
+          mask,
+          throughputmeasurement,
+          batch,
+        ]
+      exporters: [otlp/gateway]

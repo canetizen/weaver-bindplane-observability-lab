@@ -1,0 +1,51 @@
+# Weaver Forge target that turns the Acme registry into importable Python.
+#
+# The services never spell an attribute or metric name as a string literal; they
+# import the symbols produced here. Renaming an attribute in `semconv/` is
+# therefore a compile-time-visible change in every service that used it.
+whitespace_control:
+  trim_blocks: true
+  lstrip_blocks: true
+
+params:
+  schema_url: https://acme.example/schemas/0.2.0
+
+templates:
+  # `imported_attributes` are the OpenTelemetry semantic convention attributes
+  # that Acme signals reference but do not define. They get constants too, so a
+  # service never types `"http.request.method"` by hand either.
+  - template: "attributes.py.j2"
+    filter: >
+      . as $root
+      | [$root.groups[] | select(.type == "attribute_group") | .attributes[].name] as $local
+      | {
+          registry_attributes: [$root.groups[] | select(.type == "attribute_group")],
+          imported_attributes: (
+            [$root.groups[] | select(.type != "attribute_group") | .attributes[]]
+            | map(select(.name as $n | ($local | index($n)) | not))
+            | unique_by(.name)
+          )
+        }
+    application_mode: single
+    file_name: "acme_semconv/attributes.py"
+
+  - template: "metrics.py.j2"
+    filter: >
+      { metrics: [.groups[] | select(.type == "metric")] }
+    application_mode: single
+    file_name: "acme_semconv/metrics.py"
+
+  - template: "signals.py.j2"
+    filter: >
+      {
+        spans: [.groups[] | select(.type == "span")],
+        events: [.groups[] | select(.type == "event")],
+        entities: [.groups[] | select(.type == "entity")]
+      }
+    application_mode: single
+    file_name: "acme_semconv/signals.py"
+
+  - template: "__init__.py.j2"
+    filter: "."
+    application_mode: single
+    file_name: "acme_semconv/__init__.py"

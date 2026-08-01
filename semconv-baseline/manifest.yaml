@@ -1,0 +1,9 @@
+name: acme
+description: >
+  Frozen v0.1.0 snapshot of the Acme Shop telemetry schema. It exists solely as
+  the baseline for `weaver registry diff`, which reports what changed between
+  this release and the current schema in `semconv/`.
+schema_url: https://acme.example/schemas/0.1.0
+dependencies:
+  - schema_url: https://opentelemetry.io/schemas/1.43.0
+    registry_path: https://github.com/open-telemetry/semantic-conventions@v1.43.0[model]

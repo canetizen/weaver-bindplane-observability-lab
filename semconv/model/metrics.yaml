@@ -1,0 +1,51 @@
+groups:
+  - id: metric.acme.orders.submitted
+    type: metric
+    metric_name: acme.orders.submitted
+    instrument: counter
+    unit: "{order}"
+    stability: development
+    brief: Number of orders accepted by the checkout service.
+    attributes:
+      - ref: acme.customer.tier
+        requirement_level: required
+
+  - id: metric.acme.payment.duration
+    type: metric
+    metric_name: acme.payment.duration
+    instrument: histogram
+    unit: "s"
+    stability: development
+    brief: End-to-end duration of a payment authorization attempt.
+    attributes:
+      - ref: acme.payment.method
+        requirement_level: required
+      - ref: acme.payment.decline_reason
+        requirement_level:
+          conditionally_required: When the authorization was declined.
+
+  # Derived by the gateway collector's Bindplane logcount processor, not by any
+  # service. Pipeline-generated metrics are part of the schema too.
+  - id: metric.acme.log.count
+    type: metric
+    metric_name: acme.log.count
+    instrument: gauge
+    unit: "{logs}"
+    stability: development
+    brief: Log records observed by the gateway collector during one interval.
+    attributes:
+      - ref: acme.log.severity
+        requirement_level: required
+      - ref: acme.log.service_name
+        requirement_level: required
+
+  - id: entity.acme.service
+    type: entity
+    stability: development
+    name: acme.service
+    brief: An Acme Shop service instance.
+    attributes:
+      - ref: service.name
+        requirement_level: required
+      - ref: acme.service.tier
+        requirement_level: required

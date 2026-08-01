@@ -1,0 +1,42 @@
+"""
+Description: Metric definitions generated from the Acme telemetry registry.
+Created by: OpenTelemetry Weaver
+Date: generated
+
+DO NOT EDIT. Regenerate with `make generate`. Source of truth: semconv/model/.
+Schema URL: {{ params.schema_url }}
+"""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class MetricDef:
+    """A metric as declared in the registry.
+
+    Attributes:
+        name: Instrument name to register with the OpenTelemetry meter.
+        instrument: Instrument kind (`counter`, `histogram`, `updowncounter`, `gauge`).
+        unit: UCUM unit string.
+        brief: Human description, reused as the instrument description.
+        attribute_keys: Attribute keys this metric is dimensioned by.
+    """
+
+    name: str
+    instrument: str
+    unit: str
+    brief: str
+    attribute_keys: tuple[str, ...]
+
+{% for metric in ctx.metrics | sort(attribute='metric_name') %}
+
+
+{{ metric.metric_name | screaming_snake_case }} = MetricDef(
+    name="{{ metric.metric_name }}",
+    instrument="{{ metric.instrument }}",
+    unit="{{ metric.unit }}",
+    brief="{{ metric.brief | trim | replace('"', '\\"') }}",
+    attribute_keys=({% for attr in metric.attributes | sort(attribute='name') %}"{{ attr.name }}", {% endfor %}),
+)
+"""{{ metric.brief | trim }}"""
+{% endfor %}

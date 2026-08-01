@@ -1,0 +1,125 @@
+# Description: Central BDOT gateway collector; aggregates every agent, derives log-based metrics and fans out to the backends.
+# Created by: Mustafa Can Caliskan
+# Date: 2026-08-01
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Separate ingress for the conformance findings Weaver sends back. Keeping it
+  # off the main OTLP port is what stops the loop: findings go to Loki only and
+  # are never forwarded to live-check again.
+  otlp/findings:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4419
+
+  # Bindplane component. Receives the metrics that the logcount processor
+  # derives from the log stream.
+  route/log-metrics:
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Bindplane component. Turns log volume into a metric dimensioned by service
+  # and severity, so log throughput is queryable in Prometheus without storing
+  # or scanning the logs themselves.
+  logcount:
+    route: log-metrics
+    interval: 15s
+    metric_name: acme.log.count
+    metric_unit: "{logs}"
+    ottl_match: "true"
+    ottl_attributes:
+      acme.log.severity: severity_text
+      acme.log.service_name: resource.attributes["service.name"]
+
+  # Bindplane component. Routine INFO chatter is halved on the way to storage
+  # while every warning and error is kept.
+  sampling:
+    drop_ratio: 0.5
+    condition: severity_number < SEVERITY_NUMBER_WARN
+
+  transform/pipeline_marker:
+    error_mode: ignore
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["acme.pipeline.tier"], "gateway")
+    trace_statements:
+      - context: resource
+        statements:
+          - set(attributes["acme.pipeline.tier"], "gateway")
+
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+  # Every signal is mirrored to Weaver, which grades it against the registry.
+  # Weaver's OTLP listener does not accept gzip, so this leg stays uncompressed.
+  otlp/weaver:
+    endpoint: weaver-live-check:4317
+    compression: none
+    tls:
+      insecure: true
+
+  debug:
+    verbosity: normal
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, zpages]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/pipeline_marker, batch]
+      exporters: [otlp/jaeger, otlp/weaver]
+
+    metrics:
+      receivers: [otlp, route/log-metrics]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, otlp/weaver]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, logcount, sampling, transform/pipeline_marker, batch]
+      exporters: [otlphttp/loki, otlp/weaver]
+
+    logs/findings:
+      receivers: [otlp/findings]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki, debug]

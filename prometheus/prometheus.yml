@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  # Application and log-derived metrics, exported by the gateway collector.
+  - job_name: acme-telemetry
+    static_configs:
+      - targets: ["gw-collector:8889"]
+
+  # The collectors' own internal telemetry, which is where the Bindplane
+  # throughputmeasurement counters (payload bytes and OTLP object counts) land.
+  - job_name: bdot-internal
+    static_configs:
+      - targets:
+          - "gw-collector:8888"
+          - "agent-gateway:8888"
+          - "agent-checkout:8888"
+          - "agent-payment:8888"

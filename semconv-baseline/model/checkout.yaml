@@ -1,0 +1,15 @@
+groups:
+  - id: span.acme.checkout.submit_order
+    type: span
+    stability: development
+    span_kind: server
+    brief: >
+      Handling of a customer order submission by the checkout service, from
+      request acceptance until the payment result is known.
+    attributes:
+      - ref: acme.order.id
+        requirement_level: required
+      - ref: acme.customer.tier
+        requirement_level: required
+      - ref: http.request.method
+        requirement_level: required

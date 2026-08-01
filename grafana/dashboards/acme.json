@@ -1,0 +1,196 @@
+{
+  "uid": "acme-observability-lab",
+  "title": "Acme Shop — Schema-First Observability",
+  "tags": ["acme", "weaver", "bindplane"],
+  "timezone": "browser",
+  "editable": false,
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "row",
+      "id": 100,
+      "title": "Application signals (defined by the Weaver registry)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "id": 1,
+      "title": "Orders submitted / s by customer tier",
+      "description": "acme.orders.submitted — declared in semconv/model/metrics.yaml, emitted by the checkout service through the generated MetricDef.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (acme_customer_tier) (rate(acme_orders_submitted_total[2m]))",
+          "legendFormat": "{{acme_customer_tier}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 2,
+      "title": "Payment authorization latency p95 by method",
+      "description": "acme.payment.duration — histogram declared in the registry with the unit 's'.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, acme_payment_method) (rate(acme_payment_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{acme_payment_method}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 3,
+      "title": "Declines / s by reason",
+      "description": "Derived from the acme.payment.decline_reason dimension of acme.payment.duration.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 20, "lineWidth": 1, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (acme_payment_decline_reason) (rate(acme_payment_duration_seconds_count{acme_payment_decline_reason!=\"\"}[2m]))",
+          "legendFormat": "{{acme_payment_decline_reason}}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 4,
+      "title": "Orders in the selected range",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(acme_orders_submitted_total[$__range]))",
+          "legendFormat": "orders"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 101,
+      "title": "Bindplane collector pipeline",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "type": "timeseries",
+      "id": 5,
+      "title": "Log volume by service and severity (BDOT logcount processor)",
+      "description": "acme.log.count is produced by the gateway collector's logcount processor and routed into the metrics pipeline by the Bindplane route receiver — log volume becomes queryable without storing the logs.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 1, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (acme_log_service_name, acme_log_severity) (acme_log_count)",
+          "legendFormat": "{{acme_log_service_name}} · {{acme_log_severity}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 6,
+      "title": "Telemetry throughput per agent (BDOT throughputmeasurement processor)",
+      "description": "Protobuf payload bytes measured by each sidecar agent before forwarding to the gateway.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance) (rate(otelcol_processor_throughputmeasurement_trace_data_size[2m]))",
+          "legendFormat": "{{instance}} · traces"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (instance) (rate(otelcol_processor_throughputmeasurement_log_data_size[2m]))",
+          "legendFormat": "{{instance}} · logs"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 102,
+      "title": "Logs and Weaver conformance findings",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }
+    },
+    {
+      "type": "logs",
+      "id": 7,
+      "title": "Application logs (card numbers masked by the BDOT mask processor)",
+      "description": "Search for 'charging card' — the payment service writes a real-looking PAN, and the sidecar agent rewrites it to [masked_credit_card] before it ever leaves the pod.",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 27 },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=~\"acme-.+\"}"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "id": 8,
+      "title": "Weaver live-check findings fed back into the pipeline",
+      "description": "weaver registry live-check grades the live OTLP stream against semconv/ and emits each finding as an OTLP log back into the gateway collector, which stores it in Loki.",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 27 },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"weaver\"} | weaver_finding_level=\"violation\""
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 9,
+      "title": "Schema violations / min by finding type",
+      "description": "With EMIT_VIOLATIONS=true the payment service emits an undeclared attribute (acme.payment.card_number) and an invalid enum value (acme.customer.tier=gold). Set it to false and rebuild to watch these disappear.",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 37 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 1, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (weaver_finding_id) (count_over_time({service_name=\"weaver\"} | weaver_finding_level=\"violation\" | weaver_finding_context_attribute_key=~\"acme\\\\..*\" [1m]))",
+          "legendFormat": "{{weaver_finding_id}}"
+        }
+      ]
+    }
+  ]
+}

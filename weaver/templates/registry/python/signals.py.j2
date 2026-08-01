@@ -1,0 +1,33 @@
+"""
+Description: Span, event and entity names generated from the Acme telemetry registry.
+Created by: OpenTelemetry Weaver
+Date: generated
+
+DO NOT EDIT. Regenerate with `make generate`. Source of truth: semconv/model/.
+Schema URL: {{ params.schema_url }}
+"""
+
+{% for span in ctx.spans | sort(attribute='id') %}
+{% set span_name = span.id | replace('span.', '') %}
+
+SPAN_{{ span_name | screaming_snake_case }} = "{{ span_name }}"
+"""{{ span.brief | trim }}
+
+Span kind: {{ span.span_kind }}. Required attributes:
+{% for attr in span.attributes | sort(attribute='name') %}
+{% if attr.requirement_level == 'required' %}
+- {{ attr.name }}
+{% endif %}
+{% endfor %}
+"""
+{% endfor %}
+{% for event in ctx.events | sort(attribute='id') %}
+
+EVENT_{{ event.name | screaming_snake_case }} = "{{ event.name }}"
+"""{{ event.brief | trim }}"""
+{% endfor %}
+{% for entity in ctx.entities | sort(attribute='id') %}
+
+ENTITY_{{ entity.name | screaming_snake_case }} = "{{ entity.name }}"
+"""{{ entity.brief | trim }}"""
+{% endfor %}

@@ -1,0 +1,51 @@
+name: semconv
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  schema:
+    name: Validate and regenerate the telemetry schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load image versions
+        run: cat .env.example >> "$GITHUB_ENV"
+
+      - name: Check the registry and enforce the Acme policies
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp/weaver \
+            -v "$PWD:/work" -w /work \
+            "otel/weaver:${WEAVER_VERSION}" \
+            registry check -r semconv -p semconv/policies
+
+      - name: Regenerate the Python bindings and the reference docs
+        run: |
+          for target in python markdown; do
+            out="generated/docs"
+            [ "$target" = "python" ] && out="generated/python"
+            docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp/weaver \
+              -v "$PWD:/work" -w /work \
+              "otel/weaver:${WEAVER_VERSION}" \
+              registry generate -r semconv --templates weaver/templates "$target" "$out"
+          done
+
+      - name: Fail if the committed artifacts are stale
+        run: |
+          git diff --exit-code generated/ \
+            || { echo "::error::generated/ is out of date — run 'make generate' and commit"; exit 1; }
+
+      - name: Report schema changes against the 0.1.0 baseline
+        run: |
+          {
+            echo '## Schema changes since 0.1.0'
+            echo '```'
+            docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp/weaver \
+              -v "$PWD:/work" -w /work \
+              "otel/weaver:${WEAVER_VERSION}" \
+              registry diff -r semconv --baseline-registry semconv-baseline
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
